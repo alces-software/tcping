@@ -24,6 +24,13 @@
  *     2  user timeout
  */
 
+/*
+ * This is a modified version of tcping that works only with IP
+ * addresses to remove the need to use gethostbyname allowing
+ * compilation as a static binary.
+ *
+ * Modifications are (c) 2017 Alces Software Ltd.
+ */
 #define VERSION 1.3.5
 
 #include <sys/types.h>
@@ -48,7 +55,6 @@ int main (int argc, char *argv[]) {
 
 	int sockfd;
 	struct sockaddr_in addr;
-	struct hostent *host;
 	int error = 0;
 	int ret;
 	socklen_t errlen;
@@ -58,14 +64,18 @@ int main (int argc, char *argv[]) {
 	int c;
 	char *cptr;
 	long timeout_sec=0, timeout_usec=0;
+        struct in_addr host_addr;
 	int port=0;
-
+        
 	if (argc < 3)  {
 		usage(argv[0]);
 	}
-	
-	while((c = getopt(argc, argv, "qt:u:")) != -1) {
+
+	while((c = getopt(argc, argv, "hqt:u:")) != -1) {
 		switch(c) {
+			case 'h':
+				usage(argv[0]);
+				break;
 			case 'q':
 				verbose = 0;
 				break;
@@ -90,19 +100,19 @@ int main (int argc, char *argv[]) {
 	sockfd = socket (AF_INET, SOCK_STREAM, 0);
 
 	memset(&addr, 0, sizeof(addr));
-
-	if ((host = gethostbyname(argv[optind])) == NULL) {
-		if (verbose)
-#ifdef HAVE_HSTRERROR
-			fprintf(stderr, "error: %s\n", hstrerror(h_errno));
-#else
-			fprintf(stderr, "error: host not found");
-#endif
-		exit(-1);
-	}
-	
-	memcpy(&addr.sin_addr, host->h_addr_list[0], host->h_length);
-	addr.sin_family = host->h_addrtype; /* always AF_INET */
+        memset(&host_addr, 0, sizeof(host_addr));
+        if ((ret = inet_pton(AF_INET, argv[optind], &host_addr)) != 1) {
+          if (ret == -1) {
+            if (verbose) 
+              fprintf(stderr, "error: %s port %s: %s\n", argv[optind], argv[optind+1], strerror(errno));
+          } else {
+            if (verbose) 
+              fprintf(stderr, "error: %s is not a valid IP address\n", argv[optind]);
+          }
+          return(-1);
+        }
+	memcpy(&addr.sin_addr, &host_addr, sizeof(host_addr));
+	addr.sin_family = AF_INET;
 	if (argv[optind+1]) {
 		cptr = NULL;
 		port = strtol(argv[optind+1], &cptr, 10);
@@ -176,8 +186,6 @@ int main (int argc, char *argv[]) {
 }
 
 void usage(char *prog) {
-	fprintf(stderr, "error: Usage: %s [-q] [-t timeout_sec] [-u timeout_usec] <host> <port>\n", prog);
+	fprintf(stderr, "error: Usage: %s [-q] [-t timeout_sec] [-u timeout_usec] <ip> <port>\n", prog);
 		exit(-1);
 }
-	
-
